@@ -30,14 +30,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-    assets:
-      - .env
-      - assets/models/
-      - assets/images/
   # ML & Computer Vision
-  tflite_flutter: ^0.10.4
+  tflite_flutter: ^0.11.0
   camera: ^0.10.5
+  image: ^4.1.7
 
   # State Management (pilih salah satu)
   provider: ^6.1.1
@@ -78,6 +74,13 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - .env
+    - assets/models/
+    - assets/images/
+    - assets/detect.tflite
+    - assets/labelmap.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

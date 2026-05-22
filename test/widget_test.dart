@@ -1,30 +1,57 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mongo_dart/mongo_dart.dart';
 
-import 'package:vibe_notes/main.dart';
+import 'package:vibe_notes/data/models/study_session.dart';
+import 'package:vibe_notes/view/dashboard_view.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('shows VibeNote dashboard content', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const ui.Size(430, 932));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DashboardView(
+          loadSessions: () async => [
+            StudySession(
+              id: ObjectId(),
+              type: 'Kuliah',
+              title: 'Nugas PCD P',
+              description:
+                  'Sesi belajar mengerjakan tugas Pengolahan Citra Digital',
+              date: DateTime(2026, 5, 8),
+              startTime: '13:00',
+              endTime: '14:40',
+              durationMinutes: 100,
+              photos: const ['https://example.com/session1_1.jpg'],
+              detectedObjects: const ['Laptop', 'Buku', 'Kopi'],
+              vibe: const VibeAnalysis(
+                label: 'Fokus',
+                description: 'Suasana belajar terlihat fokus.',
+              ),
+              createdAt: DateTime.utc(2026, 5, 20),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('VibeNote'), findsOneWidget);
+    expect(find.text('Mulai Sesi'), findsOneWidget);
+    expect(find.text('Nugas PCD P'), findsOneWidget);
+    expect(find.text('Kuliah'), findsOneWidget);
+    expect(find.text('Fokus'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.text('Nugas PCD P'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detail Sesi'), findsOneWidget);
+    expect(find.text('Foto Sesi'), findsOneWidget);
+    expect(find.text('Insight sesi'), findsOneWidget);
+    expect(find.textContaining('Vibe: Fokus'), findsOneWidget);
   });
 }
