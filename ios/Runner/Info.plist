@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Vibe Notes membutuhkan akses kamera untuk mengambil foto logbook.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Vibe Notes membutuhkan akses galeri untuk menyimpan foto hasil filter.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vibe Notes membutuhkan akses galeri untuk memilih foto logbook.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

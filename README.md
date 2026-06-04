@@ -1,6 +1,6 @@
 # VibeNotes 📓
 
-> Aplikasi logbook belajar berbasis *Computer Vision* yang mampu mendeteksi objek pendukung belajar secara real-time serta menganalisis suasana belajar (*vibe*) menggunakan pendekatan Pengolahan Citra Digital dan Edge AI.
+> Aplikasi logbook kegiatan berbasis *Computer Vision* yang mampu mendeteksi objek pendukung aktivitas secara real-time serta menganalisis suasana kegiatan (*vibe*) menggunakan pendekatan Pengolahan Citra Digital dan Edge AI.
 
 ---
 
@@ -20,19 +20,19 @@ https://www.figma.com/design/HF5KzagzbEBtxOAhoM9VUV/VibeNote-Design?node-id=0-1&
   Mengakses kamera perangkat secara live dengan manajemen lifecycle yang aman.
 
 * 🤖 **Object Detection (Edge AI)**
-  Mendeteksi objek seperti laptop, buku, dan perangkat belajar menggunakan model TensorFlow Lite / YOLO secara lokal (tanpa API eksternal).
+  Mendeteksi objek seperti laptop, buku, minuman, dan perangkat aktivitas menggunakan model TensorFlow Lite / YOLO secara lokal (tanpa API eksternal).
 
 * 🎨 **Spatial Overlay**
   Menampilkan hasil deteksi dalam bentuk *bounding box* menggunakan `CustomPainter`.
 
 * 🧠 **Vibe Analysis (PCD)**
-  Menganalisis suasana belajar berdasarkan distribusi warna dan pencahayaan (HSV, brightness, contrast).
+  Menganalisis suasana kegiatan berdasarkan distribusi warna dan pencahayaan (HSV, brightness, contrast).
 
 * 📖 **Logbook System**
-  Menyimpan aktivitas belajar beserta hasil analisis visual dalam bentuk logbook.
+  Menyimpan kegiatan beserta hasil analisis visual dalam bentuk logbook.
 
 * 📊 **Insight Sederhana**
-  Memberikan gambaran pola belajar berdasarkan data yang tersimpan.
+  Memberikan gambaran pola aktivitas berdasarkan data yang tersimpan.
 
 ---
 
@@ -101,9 +101,8 @@ lib/
 │   ├── overlay/     # Spatial Overlay (FR-03)
 │   └── preprocessing/ # Image Processing (FR-04)
 ├── features/
-│   ├── logbook/     # CRUD entri belajar
+│   ├── logbook/     # CRUD entri kegiatan
 │   ├── detection/   # Halaman deteksi real-time
-│   └── settings/    # Konfigurasi user
 ├── data/
 │   ├── local/       # Hive storage
 │   ├── remote/      # MongoDB sync

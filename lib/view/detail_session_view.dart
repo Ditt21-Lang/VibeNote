@@ -1,11 +1,75 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../data/models/study_session.dart';
+import '../data/remote/study_log_repository.dart';
+import '../features/logbook/create_logbook_view.dart';
 
 class DetailSessionView extends StatelessWidget {
   const DetailSessionView({super.key, required this.session});
 
   final StudySession session;
+
+  Future<void> _editSession(BuildContext context) async {
+    final updated = await Navigator.of(context).push<StudySession>(
+      MaterialPageRoute(
+        builder: (_) => CreateLogbookView(initialSession: session),
+      ),
+    );
+
+    if (updated == null || !context.mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
+  Future<void> _deleteSession(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Hapus logbook?'),
+          content: const Text(
+            'Data sesi ini akan dihapus dari daftar lokal dan disinkronkan ke database saat online.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Hapus'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await StudyLogRepository().delete(session);
+      if (!context.mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menghapus logbook: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +81,11 @@ class DetailSessionView extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 430),
             child: Column(
               children: [
-                _DetailHeader(session: session),
+                _DetailHeader(
+                  session: session,
+                  onEdit: () => _editSession(context),
+                  onDelete: () => _deleteSession(context),
+                ),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
@@ -31,7 +99,7 @@ class DetailSessionView extends StatelessWidget {
                           label: 'Foto Sesi',
                         ),
                         const SizedBox(height: 14),
-                        const _PhotoPlaceholderRow(),
+                        _PhotoRow(photos: session.photos),
                         const SizedBox(height: 34),
                         const _SectionLabel(
                           icon: Icons.lightbulb_outline,
@@ -53,9 +121,15 @@ class DetailSessionView extends StatelessWidget {
 }
 
 class _DetailHeader extends StatelessWidget {
-  const _DetailHeader({required this.session});
+  const _DetailHeader({
+    required this.session,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final StudySession session;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +180,48 @@ class _DetailHeader extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 8),
+          _HeaderAction(
+            icon: Icons.edit_outlined,
+            color: const Color(0xFF238BFF),
+            onTap: onEdit,
+          ),
+          const SizedBox(width: 8),
+          _HeaderAction(
+            icon: Icons.delete_outline,
+            color: Colors.redAccent,
+            onTap: onDelete,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: color, size: 22),
+        ),
       ),
     );
   }
@@ -287,19 +402,84 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _PhotoPlaceholderRow extends StatelessWidget {
-  const _PhotoPlaceholderRow();
+class _PhotoRow extends StatelessWidget {
+  const _PhotoRow({required this.photos});
+
+  final List<String> photos;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
-        Expanded(child: _PhotoPlaceholder()),
-        SizedBox(width: 16),
-        Expanded(child: _PhotoPlaceholder()),
-        SizedBox(width: 16),
-        Expanded(child: _PhotoPlaceholder()),
-      ],
+    if (photos.isEmpty) {
+      return const Row(
+        children: [
+          Expanded(child: _PhotoPlaceholder()),
+          SizedBox(width: 16),
+          Expanded(child: _PhotoPlaceholder()),
+          SizedBox(width: 16),
+          Expanded(child: _PhotoPlaceholder()),
+        ],
+      );
+    }
+
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          return _PhotoTile(path: photos[index]);
+        },
+      ),
+    );
+  }
+}
+
+class _PhotoTile extends StatelessWidget {
+  const _PhotoTile({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: AspectRatio(
+        aspectRatio: 1.18,
+        child: Container(
+          color: const Color(0xFFEDEDED),
+          child: _isRemoteUrl(path)
+              ? Image.network(
+                  path,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _PhotoError(),
+                )
+              : Image.file(
+                  File(path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _PhotoError(),
+                ),
+        ),
+      ),
+    );
+  }
+
+  bool _isRemoteUrl(String value) {
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+}
+
+class _PhotoError extends StatelessWidget {
+  const _PhotoError();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Icon(
+        Icons.broken_image_outlined,
+        color: Color(0xFF8C8C8C),
+        size: 24,
+      ),
     );
   }
 }

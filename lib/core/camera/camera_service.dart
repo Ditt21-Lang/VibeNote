@@ -9,15 +9,23 @@ class CameraService {
 
   CameraController? get controller => _controller;
   bool get isInitialized => _isInitialized;
+  bool get canSwitchCamera => _cameras.length > 1;
+  CameraLensDirection? get currentLensDirection =>
+      _controller?.description.lensDirection;
 
   Future<void> initialize() async {
     try {
       _cameras = await availableCameras();
       if (_cameras.isEmpty) return;
 
+      final selectedCamera = _cameras.firstWhere(
+        (cam) => cam.lensDirection == CameraLensDirection.back,
+        orElse: () => _cameras.first,
+      );
+
       _controller = CameraController(
-        _cameras.first,
-        ResolutionPreset.veryHigh,
+        selectedCamera,
+        ResolutionPreset.high,
         enableAudio: false,
       );
 
@@ -51,14 +59,16 @@ class CameraService {
       orElse: () => _cameras.first,
     );
 
+    _isInitialized = false;
     await _controller?.dispose();
     _controller = CameraController(
       newCamera,
-      ResolutionPreset.veryHigh,
+      ResolutionPreset.high,
       enableAudio: false,
     );
     await _controller!.initialize();
     await _configureCamera();
+    _isInitialized = true;
   }
 
   Future<void> _configureCamera() async {

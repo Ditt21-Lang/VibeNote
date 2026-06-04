@@ -199,32 +199,32 @@ class InferenceService {
       return const VibeResult(
         label: 'Deep Focus 🎯',
         description:
-            'Meja belajarmu lengkap! Kondisi sangat mendukung untuk belajar intensif.',
+            'Area aktivitasmu terlihat lengkap dan mendukung fokus intensif.',
       );
     } else if (focusScore >= 3) {
       return const VibeResult(
-        label: 'Fokus Belajar 📚',
-        description: 'Suasana belajar yang baik. Tetap semangat!',
+        label: 'Fokus Produktif 🎯',
+        description: 'Suasana kegiatan terlihat rapi dan mendukung fokus.',
       );
     } else if (focusScore >= 1 && hasCup) {
       return const VibeResult(
         label: 'Santai Produktif ☕',
-        description: 'Belajar sambil ngopi. Nikmati prosesnya!',
+        description: 'Aktivitas santai dengan suasana yang tetap produktif.',
       );
     } else if (distractionScore >= 3) {
       return const VibeResult(
         label: 'Distraksi ⚠️',
-        description: 'Jauhkan HP dulu, yuk fokus belajar!',
+        description: 'Ada potensi distraksi. Rapikan fokus kegiatanmu dulu.',
       );
     } else if (detections.isEmpty) {
       return const VibeResult(
         label: 'Belum Terdeteksi 🔍',
-        description: 'Arahkan kamera ke meja belajarmu.',
+        description: 'Arahkan kamera ke area kegiatanmu.',
       );
     } else {
       return const VibeResult(
-        label: 'Siap Belajar 💡',
-        description: 'Mulai sesi belajarmu sekarang!',
+        label: 'Siap Beraktivitas 💡',
+        description: 'Mulai catat kegiatanmu sekarang!',
       );
     }
   }

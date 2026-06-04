@@ -20,6 +20,10 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Vibe Notes membutuhkan akses galeri untuk menyimpan foto hasil filter.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vibe Notes membutuhkan akses galeri untuk memilih atau menyimpan foto.</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>

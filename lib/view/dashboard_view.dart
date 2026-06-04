@@ -25,14 +25,63 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   Future<List<StudySession>> _loadSessions() {
-    return widget.loadSessions?.call() ??
-        const StudyLogRepository().fetchStudyLogs();
+    return widget.loadSessions?.call() ?? StudyLogRepository().fetchStudyLogs();
+  }
+
+  Future<void> _refreshSessions() async {
+    final future = _loadSessions();
+    setState(() {
+      _sessionsFuture = future;
+    });
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder handles the visible error state.
+    }
   }
 
   void _retry() {
     setState(() {
       _sessionsFuture = _loadSessions();
     });
+  }
+
+  Future<void> _openAllSessions() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _AllSessionsView(loadSessions: _loadSessions),
+      ),
+    );
+
+    if (!mounted) return;
+    await _refreshSessions();
+  }
+
+  Future<void> _openCreateLogbook() async {
+    final session = await Navigator.of(context).push<StudySession>(
+      MaterialPageRoute(builder: (_) => const CreateLogbookView()),
+    );
+
+    if (session == null || !mounted) return;
+
+    await _refreshSessions();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Logbook berhasil disimpan!'),
+          ],
+        ),
+        backgroundColor: const Color(0xFF10BFAE),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
@@ -51,34 +100,46 @@ class _DashboardViewState extends State<DashboardView> {
                 return Column(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            _Header(session: sessions.firstOrNull),
-                            _QuickActions(),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                20,
-                                20,
-                                20,
-                                24,
+                      child: RefreshIndicator(
+                        color: const Color(0xFF10BFAE),
+                        onRefresh: _refreshSessions,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: Column(
+                            children: [
+                              _Header(sessions: sessions),
+                              _QuickActions(
+                                onCreateLogbook: _openCreateLogbook,
                               ),
-                              child: Column(
-                                children: [
-                                  const _SectionTitle(),
-                                  const SizedBox(height: 16),
-                                  _SessionList(
-                                    snapshot: snapshot,
-                                    onRetry: _retry,
-                                  ),
-                                ],
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  20,
+                                  20,
+                                  24,
+                                ),
+                                child: Column(
+                                  children: [
+                                    _SectionTitle(
+                                      onViewAll: sessions.isNotEmpty
+                                          ? _openAllSessions
+                                          : null,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _SessionList(
+                                      snapshot: snapshot,
+                                      onRetry: _retry,
+                                      onChanged: _refreshSessions,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    const _BottomNavigation(),
+                    _BottomNavigation(onCreateLogbook: _openCreateLogbook),
                   ],
                 );
               },
@@ -91,12 +152,20 @@ class _DashboardViewState extends State<DashboardView> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.session});
+  const _Header({required this.sessions});
 
-  final StudySession? session;
+  final List<StudySession> sessions;
 
   @override
   Widget build(BuildContext context) {
+    final todaySessions = sessions.where(_isToday).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final todayDuration = todaySessions.fold<int>(
+      0,
+      (total, session) => total + session.durationMinutes,
+    );
+    final todayStatus = todaySessions.firstOrNull?.vibe.label ?? 'Kosong';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 38),
@@ -119,7 +188,7 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            _dayAndDate(session?.date ?? DateTime.now()),
+            _dayAndDate(DateTime.now()),
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -130,16 +199,13 @@ class _Header extends StatelessWidget {
             children: [
               Expanded(
                 child: _MetricTile(
-                  label: 'Waktu belajar',
-                  value: _formatDuration(session?.durationMinutes ?? 0),
+                  label: 'Waktu beraktivitas',
+                  value: _formatDuration(todayDuration),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _MetricTile(
-                  label: 'Status',
-                  value: session?.vibe.label ?? 'Kosong',
-                ),
+                child: _MetricTile(label: 'Status', value: todayStatus),
               ),
             ],
           ),
@@ -152,6 +218,13 @@ class _Header extends StatelessWidget {
     final hours = minutes ~/ 60;
     final remainingMinutes = minutes % 60;
     return '${hours}h ${remainingMinutes}m';
+  }
+
+  bool _isToday(StudySession session) {
+    final now = DateTime.now();
+    return session.date.year == now.year &&
+        session.date.month == now.month &&
+        session.date.day == now.day;
   }
 
   String _dayAndDate(DateTime date) {
@@ -230,6 +303,10 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
+  const _QuickActions({required this.onCreateLogbook});
+
+  final VoidCallback onCreateLogbook;
+
   @override
   Widget build(BuildContext context) {
     return Transform.translate(
@@ -260,10 +337,10 @@ class _QuickActions extends StatelessWidget {
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _ActionButton(
+                  const _ActionButton(
                     label: 'Kamera',
                     icon: Icons.camera_alt_outlined,
                     backgroundColor: Color(0xFFC9E3FF),
@@ -274,8 +351,9 @@ class _QuickActions extends StatelessWidget {
                     icon: Icons.book_outlined,
                     backgroundColor: Color(0xFFB6ECE7),
                     iconColor: Color(0xFF03BCA9),
+                    onTap: onCreateLogbook,
                   ),
-                  _ActionButton(
+                  const _ActionButton(
                     label: 'Review',
                     icon: Icons.trending_up,
                     backgroundColor: Color(0xFFC5C5C5),
@@ -297,59 +375,67 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     required this.backgroundColor,
     required this.iconColor,
+    this.onTap,
   });
 
   final String label;
   final IconData icon;
   final Color backgroundColor;
   final Color iconColor;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 86,
-      child: Column(
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Center(
-              child: Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: iconColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor == Colors.black
-                      ? Colors.white
-                      : Colors.black,
-                  size: 22,
+    return InkWell(
+      borderRadius: BorderRadius.circular(9),
+      onTap: onTap,
+      child: SizedBox(
+        width: 86,
+        child: Column(
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Center(
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: iconColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    color: iconColor == Colors.black
+                        ? Colors.white
+                        : Colors.black,
+                    size: 22,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle();
+  const _SectionTitle({this.onViewAll});
+
+  final VoidCallback? onViewAll;
 
   @override
   Widget build(BuildContext context) {
@@ -368,14 +454,25 @@ class _SectionTitle extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         Flexible(
-          child: Text(
-            'Lihat Semua',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: const Color(0xFF0B7BFF),
-              fontWeight: FontWeight.w600,
+          child: TextButton(
+            onPressed: onViewAll,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF0B7BFF),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Lihat Semua',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: onViewAll == null
+                    ? const Color(0xFF8E8E8E)
+                    : const Color(0xFF0B7BFF),
+              ),
             ),
           ),
         ),
@@ -385,10 +482,15 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _SessionList extends StatelessWidget {
-  const _SessionList({required this.snapshot, required this.onRetry});
+  const _SessionList({
+    required this.snapshot,
+    required this.onRetry,
+    required this.onChanged,
+  });
 
   final AsyncSnapshot<List<StudySession>> snapshot;
   final VoidCallback onRetry;
+  final Future<void> Function() onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +498,7 @@ class _SessionList extends StatelessWidget {
       return const _StatusMessage(
         icon: Icons.sync,
         title: 'Mengambil logbook...',
-        message: 'Data sesi sedang dibaca dari MongoDB Atlas.',
+        message: 'Data kegiatan sedang dibaca dari penyimpanan.',
       );
     }
 
@@ -415,17 +517,93 @@ class _SessionList extends StatelessWidget {
       return const _StatusMessage(
         icon: Icons.library_books_outlined,
         title: 'Belum ada sesi',
-        message: 'Koleksi study_logs masih kosong.',
+        message: 'Belum ada logbook kegiatan yang tersimpan.',
       );
     }
 
+    final previewSessions = sessions.take(3);
+
     return Column(
       children: [
-        for (final session in sessions) ...[
-          _SessionCard(session: session),
+        for (final session in previewSessions) ...[
+          _SessionCard(session: session, onChanged: onChanged),
           const SizedBox(height: 16),
         ],
       ],
+    );
+  }
+}
+
+class _AllSessionsView extends StatefulWidget {
+  const _AllSessionsView({required this.loadSessions});
+
+  final Future<List<StudySession>> Function() loadSessions;
+
+  @override
+  State<_AllSessionsView> createState() => _AllSessionsViewState();
+}
+
+class _AllSessionsViewState extends State<_AllSessionsView> {
+  late Future<List<StudySession>> _sessionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionsFuture = widget.loadSessions();
+  }
+
+  Future<void> _refreshSessions() async {
+    final future = widget.loadSessions();
+    setState(() {
+      _sessionsFuture = future;
+    });
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder handles the visible error state.
+    }
+  }
+
+  void _retry() {
+    setState(() {
+      _sessionsFuture = widget.loadSessions();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Semua Logbook'),
+        foregroundColor: Colors.black,
+        backgroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: FutureBuilder<List<StudySession>>(
+              future: _sessionsFuture,
+              builder: (context, snapshot) {
+                return RefreshIndicator(
+                  color: const Color(0xFF10BFAE),
+                  onRefresh: _refreshSessions,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    child: _SessionList(
+                      snapshot: snapshot,
+                      onRetry: _retry,
+                      onChanged: _refreshSessions,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -485,9 +663,10 @@ class _StatusMessage extends StatelessWidget {
 }
 
 class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.session});
+  const _SessionCard({required this.session, required this.onChanged});
 
   final StudySession session;
+  final Future<void> Function() onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -510,12 +689,15 @@ class _SessionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
+          onTap: () async {
+            final changed = await Navigator.of(context).push<bool>(
+              MaterialPageRoute<bool>(
                 builder: (_) => DetailSessionView(session: session),
               ),
             );
+            if (changed == true) {
+              await onChanged();
+            }
           },
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 14, 14),
@@ -644,7 +826,9 @@ class _ObjectChip extends StatelessWidget {
 }
 
 class _BottomNavigation extends StatelessWidget {
-  const _BottomNavigation();
+  const _BottomNavigation({required this.onCreateLogbook});
+
+  final VoidCallback onCreateLogbook;
 
   @override
   Widget build(BuildContext context) {
@@ -672,20 +856,17 @@ class _BottomNavigation extends StatelessWidget {
           _NavItem(
             label: 'Logbook',
             icon: Icons.book_outlined,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const CreateLogbookView(),
-                ),
-              );
-            },
+            onTap: onCreateLogbook,
           ),
           _NavItem(
             label: 'Kamera',
             icon: Icons.camera_alt_outlined,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const CameraView())),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    const CameraView(mode: CameraViewMode.standalone),
+              ),
+            ),
           ),
           const _NavItem(label: 'Statistik', icon: Icons.trending_up),
         ],

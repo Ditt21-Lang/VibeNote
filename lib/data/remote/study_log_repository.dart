@@ -1,46 +1,153 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:mongo_dart/mongo_dart.dart';
+import 'dart:async';
+import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
+
+import '../local/offline_photo_storage.dart';
+import '../local/study_log_local_repository.dart';
 import '../models/study_session.dart';
+import 'cloudinary_service.dart';
+import 'study_log_remote_repository.dart';
 
 class StudyLogRepository {
-  const StudyLogRepository({this.collectionName = 'study_logs'});
+  StudyLogRepository({
+    StudyLogLocalRepository? localRepository,
+    StudyLogRemoteRepository? remoteRepository,
+    CloudinaryService? cloudinaryService,
+    OfflinePhotoStorage? photoStorage,
+  }) : _local = localRepository ?? StudyLogLocalRepository(),
+       _remote = remoteRepository ?? const StudyLogRemoteRepository(),
+       _cloudinary = cloudinaryService ?? CloudinaryService(),
+       _photoStorage = photoStorage ?? const OfflinePhotoStorage();
 
-  final String collectionName;
+  static StreamSubscription<List<ConnectivityResult>>?
+  _connectivitySubscription;
+  static bool _isSyncing = false;
+
+  final StudyLogLocalRepository _local;
+  final StudyLogRemoteRepository _remote;
+  final CloudinaryService _cloudinary;
+  final OfflinePhotoStorage _photoStorage;
+
+  static void startAutoSync() {
+    _connectivitySubscription ??= Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      final hasNetwork = results.any(
+        (result) => result != ConnectivityResult.none,
+      );
+      if (hasNetwork) {
+        unawaited(StudyLogRepository().syncPending());
+      }
+    });
+  }
 
   Future<void> save(StudySession session) async {
-    final db = await _openDb();
+    final localPhotos = await _photoStorage.persistPhotos(
+      sessionId: session.id.oid,
+      photos: session.photos,
+    );
+    await _local.savePending(session.copyWith(photos: localPhotos));
+    unawaited(syncPending());
+  }
 
-    try {
-      await db.collection(collectionName).insertOne(session.toMongoDocument());
-    } finally {
-      await db.close();
-    }
+  Future<void> delete(StudySession session) async {
+    await _local.deletePending(session.id.oid);
+    unawaited(syncPending());
   }
 
   Future<List<StudySession>> fetchStudyLogs() async {
-    final db = await _openDb();
+    final hasNetwork = await _hasNetwork();
+    if (!hasNetwork) {
+      return _local.sessions();
+    }
+
+    await syncPending();
 
     try {
-      final documents = await db
-          .collection(collectionName)
-          .find(where.sortBy('created_at', descending: true))
-          .toList();
+      final remoteSessions = await _remote.fetchStudyLogs();
+      final deletedIds = await _local.deletedIds();
+      for (final session in remoteSessions) {
+        if (deletedIds.contains(session.id.oid)) continue;
+        await _local.upsertSynced(session);
+      }
+    } catch (e) {
+      debugPrint('StudyLogRepository fetch remote skipped: $e');
+    }
 
-      return documents.map(StudySession.fromMongoDocument).toList();
+    return _local.sessions();
+  }
+
+  Future<void> syncPending() async {
+    if (_isSyncing) return;
+    if (!await _hasNetwork()) return;
+
+    _isSyncing = true;
+    try {
+      final pendingEntries = await _local.pendingEntries();
+      for (final entry in pendingEntries) {
+        try {
+          final syncedSession = await _prepareForRemote(entry.session);
+          await _remote.save(syncedSession);
+          await _local.markSynced(syncedSession);
+        } catch (e) {
+          debugPrint(
+            'StudyLogRepository sync skipped for ${entry.session.id.oid}: $e',
+          );
+        }
+      }
+
+      final deletedIds = await _local.deletedIds();
+      for (final sessionId in deletedIds) {
+        try {
+          await _remote.delete(sessionId);
+          await _local.clearDeleted(sessionId);
+        } catch (e) {
+          debugPrint('StudyLogRepository delete sync skipped $sessionId: $e');
+        }
+      }
     } finally {
-      await db.close();
+      _isSyncing = false;
     }
   }
 
-  Future<Db> _openDb() async {
-    final uri = dotenv.env['MONGO_URI'];
-    if (uri == null || uri.trim().isEmpty) {
-      throw StateError('MONGO_URI belum tersedia di file .env');
+  Future<StudySession> _prepareForRemote(StudySession session) async {
+    final remotePhotos = <String>[];
+
+    for (final photo in session.photos) {
+      if (_isRemoteUrl(photo)) {
+        remotePhotos.add(photo);
+        continue;
+      }
+
+      final file = File(photo);
+      if (!await file.exists()) {
+        throw StateError('File foto offline tidak ditemukan: $photo');
+      }
+
+      final url = await _cloudinary.uploadPhoto(file);
+      if (url == null) {
+        throw StateError('Upload foto gagal: $photo');
+      }
+
+      remotePhotos.add(url);
     }
 
-    final db = await Db.create(uri);
-    await db.open();
-    return db;
+    return session.copyWith(photos: remotePhotos);
+  }
+
+  bool _isRemoteUrl(String value) {
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  Future<bool> _hasNetwork() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.any((result) => result != ConnectivityResult.none);
+    } catch (e) {
+      debugPrint('StudyLogRepository connectivity check skipped: $e');
+      return true;
+    }
   }
 }

@@ -11,6 +11,7 @@ void main() {
   testWidgets('shows VibeNote dashboard content', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const ui.Size(430, 932));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final today = DateTime.now();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -19,10 +20,9 @@ void main() {
             StudySession(
               id: ObjectId(),
               type: 'Kuliah',
-              title: 'Nugas PCD P',
-              description:
-                  'Sesi belajar mengerjakan tugas Pengolahan Citra Digital',
-              date: DateTime(2026, 5, 8),
+              title: 'Review Proyek PCD',
+              description: 'Sesi review progres Pengolahan Citra Digital',
+              date: today,
               startTime: '13:00',
               endTime: '14:40',
               durationMinutes: 100,
@@ -30,7 +30,7 @@ void main() {
               detectedObjects: const ['Laptop', 'Buku', 'Kopi'],
               vibe: const VibeAnalysis(
                 label: 'Fokus',
-                description: 'Suasana belajar terlihat fokus.',
+                description: 'Suasana kegiatan terlihat fokus.',
               ),
               createdAt: DateTime.utc(2026, 5, 20),
             ),
@@ -42,11 +42,13 @@ void main() {
 
     expect(find.text('VibeNote'), findsOneWidget);
     expect(find.text('Mulai Sesi'), findsOneWidget);
-    expect(find.text('Nugas PCD P'), findsOneWidget);
+    expect(find.text('Waktu beraktivitas'), findsOneWidget);
+    expect(find.text('1h 40m'), findsOneWidget);
+    expect(find.text('Review Proyek PCD'), findsOneWidget);
     expect(find.text('Kuliah'), findsOneWidget);
     expect(find.text('Fokus'), findsOneWidget);
 
-    await tester.tap(find.text('Nugas PCD P'));
+    await tester.tap(find.text('Review Proyek PCD'));
     await tester.pumpAndSettle();
 
     expect(find.text('Detail Sesi'), findsOneWidget);

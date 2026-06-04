@@ -1,13 +1,18 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
+import '../../core/inference/inference_service.dart';
 import '../../data/models/study_session.dart';
-import '../../data/remote/cloudinary_service.dart';
 import '../../data/remote/study_log_repository.dart';
 import '../detection/camera_view.dart';
+import '../detection/filter_preview_view.dart';
 
 class CreateLogbookView extends StatefulWidget {
-  const CreateLogbookView({super.key});
+  const CreateLogbookView({super.key, this.initialSession});
+
+  final StudySession? initialSession;
 
   @override
   State<CreateLogbookView> createState() => _CreateLogbookViewState();
@@ -29,14 +34,20 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     hour: (TimeOfDay.now().hour + 1) % 24,
     minute: TimeOfDay.now().minute,
   );
-  final List<File> _localPhotos = [];
+  final List<String> _photoPaths = [];
   final List<String> _detectedObjects = [];
+  VibeAnalysis _selectedVibe = const VibeAnalysis(
+    label: 'Belum dianalisis',
+    description: 'Tambahkan foto agar vibe kegiatan terdeteksi otomatis.',
+  );
   bool _isSaving = false;
+  bool _isPickingGallery = false;
 
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
-  final CloudinaryService _cloudinary = CloudinaryService();
+  final ImagePicker _imagePicker = ImagePicker();
+  final InferenceService _inferenceService = InferenceService();
 
   // ── Design tokens (matching VibeNotes teal theme) ─────────────
   static const _teal = Color(0xFF2EC4A9);
@@ -65,6 +76,19 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
   @override
   void initState() {
     super.initState();
+    final initialSession = widget.initialSession;
+    if (initialSession != null) {
+      _titleController.text = initialSession.title;
+      _descController.text = initialSession.description;
+      _selectedType = initialSession.type;
+      _selectedDate = initialSession.date;
+      _startTime = _readTime(initialSession.startTime);
+      _endTime = _readTime(initialSession.endTime);
+      _photoPaths.addAll(initialSession.photos);
+      _detectedObjects.addAll(initialSession.detectedObjects);
+      _selectedVibe = initialSession.vibe;
+    }
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -79,6 +103,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     _descController.dispose();
     _objectController.dispose();
     _animController.dispose();
+    _inferenceService.dispose();
     super.dispose();
   }
 
@@ -113,6 +138,17 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     final endMinutes = _endTime.hour * 60 + _endTime.minute;
     final diff = endMinutes - startMinutes;
     return diff > 0 ? diff : 0;
+  }
+
+  TimeOfDay _readTime(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return TimeOfDay.now();
+
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return TimeOfDay.now();
+
+    return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
   }
 
   // ── Pickers ───────────────────────────────────────────────────
@@ -161,7 +197,22 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
   }
 
   void _removePhoto(int index) {
-    setState(() => _localPhotos.removeAt(index));
+    setState(() {
+      _photoPaths.removeAt(index);
+      if (_photoPaths.isEmpty) {
+        _selectedVibe = const VibeAnalysis(
+          label: 'Belum dianalisis',
+          description: 'Tambahkan foto agar vibe kegiatan terdeteksi otomatis.',
+        );
+      }
+    });
+  }
+
+  void _applyVibe(VibeResult vibe) {
+    _selectedVibe = VibeAnalysis(
+      label: vibe.label,
+      description: vibe.description,
+    );
   }
 
   Future<void> _openCamera() async {
@@ -172,8 +223,8 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     if (result == null) return;
 
     setState(() {
-      if (_localPhotos.length < 5) {
-        _localPhotos.add(result.photo);
+      if (_photoPaths.length < 5) {
+        _photoPaths.add(result.photo.path);
       }
 
       for (final object in result.relevantObjects) {
@@ -181,7 +232,74 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
           _detectedObjects.add(object);
         }
       }
+
+      _applyVibe(result.vibe);
     });
+  }
+
+  Future<void> _openGallery() async {
+    if (_isPickingGallery || _photoPaths.length >= 5) return;
+
+    setState(() => _isPickingGallery = true);
+
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 92,
+      );
+      if (picked == null) return;
+
+      if (!_inferenceService.isInitialized) {
+        await _inferenceService.initialize();
+      }
+
+      final photo = File(picked.path);
+      final bytes = await photo.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        throw Exception('Foto galeri tidak bisa dibaca.');
+      }
+
+      final detections = await _inferenceService.runInferenceOnImage(decoded);
+      final vibe = InferenceService.analyzeVibe(detections);
+
+      if (!mounted) return;
+      final filtered = await Navigator.of(context).push<FilterPreviewResult>(
+        MaterialPageRoute(
+          builder: (_) => FilterPreviewView(
+            photo: photo,
+            detections: detections,
+            vibe: vibe,
+          ),
+        ),
+      );
+
+      if (filtered == null || !mounted) return;
+
+      setState(() {
+        if (_photoPaths.length < 5) {
+          _photoPaths.add(filtered.photo.path);
+        }
+
+        for (final object in InferenceService.filterRelevantObjects(
+          detections,
+        )) {
+          if (!_detectedObjects.contains(object)) {
+            _detectedObjects.add(object);
+          }
+        }
+
+        _applyVibe(vibe);
+      });
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackbar('Gagal mengambil foto galeri: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingGallery = false);
+    }
   }
 
   // ── Detected objects chips ────────────────────────────────────
@@ -207,11 +325,8 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     setState(() => _isSaving = true);
 
     try {
-      // Upload foto ke Cloudinary
-      final photoUrls = await _cloudinary.uploadPhotos(_localPhotos);
-
       final session = StudySession(
-        id: ObjectId(),
+        id: widget.initialSession?.id ?? ObjectId(),
         type: _selectedType,
         title: _titleController.text.trim(),
         description: _descController.text.trim(),
@@ -219,17 +334,16 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
         startTime: _formatTime(_startTime),
         endTime: _formatTime(_endTime),
         durationMinutes: _calcDuration(),
-        photos: photoUrls,
+        photos: List<String>.from(_photoPaths),
         detectedObjects: _detectedObjects,
-        vibe: const VibeAnalysis(label: 'Belum dianalisis', description: ''),
-        createdAt: DateTime.now(),
+        vibe: _selectedVibe,
+        createdAt: widget.initialSession?.createdAt ?? DateTime.now(),
       );
 
-      await const StudyLogRepository().save(session);
+      await StudyLogRepository().save(session);
 
       if (mounted) {
         Navigator.of(context).pop(session);
-        _showSuccessSnackbar();
       }
     } catch (e) {
       if (mounted) {
@@ -238,24 +352,6 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  void _showSuccessSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Logbook berhasil disimpan!'),
-          ],
-        ),
-        backgroundColor: _teal,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
   }
 
   void _showErrorSnackbar(String msg) {
@@ -297,6 +393,8 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                     _buildPhotosSection(),
                     const SizedBox(height: 12),
                     _buildObjectsSection(),
+                    const SizedBox(height: 12),
+                    _buildVibeSection(),
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -342,13 +440,15 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Buat Logbook',
-                      style: TextStyle(
+                      widget.initialSession == null
+                          ? 'Buat Logbook'
+                          : 'Edit Logbook',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -356,8 +456,13 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                       ),
                     ),
                     Text(
-                      'Catat sesi belajarmu',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                      widget.initialSession == null
+                          ? 'Catat kegiatanmu'
+                          : 'Perbarui catatan sesi',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -458,7 +563,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
-            decoration: _inputDecoration('Contoh: Nugas PCD P'),
+            decoration: _inputDecoration('Contoh: Rapat proyek PCD'),
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Judul wajib diisi' : null,
           ),
@@ -561,7 +666,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
             controller: _descController,
             maxLines: 3,
             style: const TextStyle(color: _textPrimary, fontSize: 14),
-            decoration: _inputDecoration('Ceritakan sesi belajarmu...'),
+            decoration: _inputDecoration('Ceritakan kegiatanmu...'),
           ),
         ],
       ),
@@ -579,7 +684,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
               _label('Foto Sesi'),
               const Spacer(),
               Text(
-                '${_localPhotos.length}/5',
+                '${_photoPaths.length}/5',
                 style: const TextStyle(color: _textSecondary, fontSize: 12),
               ),
             ],
@@ -590,49 +695,24 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                // Add photo button
-                if (_localPhotos.length < 5)
-                  GestureDetector(
+                if (_photoPaths.length < 5)
+                  _photoSourceTile(
+                    icon: Icons.camera_alt_outlined,
+                    label: 'Kamera',
                     onTap: _openCamera,
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: _tealLight,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: _teal.withValues(alpha: 0.4),
-                          width: 1.5,
-                          style: BorderStyle.solid,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(
-                            Icons.camera_alt_outlined,
-                            color: _teal,
-                            size: 26,
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Kamera',
-                            style: TextStyle(
-                              color: _teal,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  ),
+                if (_photoPaths.length < 5)
+                  _photoSourceTile(
+                    icon: Icons.photo_library_outlined,
+                    label: 'Galeri',
+                    onTap: _openGallery,
+                    isLoading: _isPickingGallery,
                   ),
 
                 // Photo thumbnails
-                ..._localPhotos.asMap().entries.map((entry) {
+                ..._photoPaths.asMap().entries.map((entry) {
                   final index = entry.key;
-                  final file = entry.value;
+                  final photo = entry.value;
                   return Stack(
                     children: [
                       Container(
@@ -642,7 +722,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           image: DecorationImage(
-                            image: FileImage(file),
+                            image: _imageProvider(photo),
                             fit: BoxFit.cover,
                           ),
                         ),
@@ -670,6 +750,108 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                     ],
                   );
                 }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _photoSourceTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isLoading = false,
+  }) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        width: 90,
+        height: 90,
+        margin: const EdgeInsets.only(right: 8),
+        decoration: BoxDecoration(
+          color: _tealLight,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _teal.withValues(alpha: 0.4),
+            width: 1.5,
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isLoading)
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(color: _teal, strokeWidth: 2),
+              )
+            else
+              Icon(icon, color: _teal, size: 26),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: _teal,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  ImageProvider _imageProvider(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return NetworkImage(path);
+    }
+    return FileImage(File(path));
+  }
+
+  Widget _buildVibeSection() {
+    return _card(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _tealLight,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.auto_awesome, color: _teal, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _label('Vibe Analysis'),
+                const SizedBox(height: 5),
+                Text(
+                  _selectedVibe.label,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (_selectedVibe.description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _selectedVibe.description,
+                    style: const TextStyle(
+                      color: _textSecondary,
+                      fontSize: 12,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -800,9 +982,14 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                     strokeWidth: 2,
                   ),
                 )
-              : const Text(
-                  'Simpan Logbook',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              : Text(
+                  widget.initialSession == null
+                      ? 'Simpan Logbook'
+                      : 'Update Logbook',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
         ),
       ),

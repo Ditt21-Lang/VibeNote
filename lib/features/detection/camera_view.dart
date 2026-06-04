@@ -7,24 +7,31 @@ import 'package:image/image.dart' as img;
 import '../../core/camera/camera_service.dart';
 import '../../core/inference/inference_service.dart';
 import '../../core/overlay/detection_overlay.dart';
+import 'filter_preview_view.dart';
 
 class CameraCaptureResult {
   const CameraCaptureResult({
     required this.photo,
     required this.detections,
     required this.vibe,
+    this.filterName,
   });
 
   final File photo;
   final List<DetectionResult> detections;
   final VibeResult vibe;
+  final String? filterName;
 
   List<String> get relevantObjects =>
       InferenceService.filterRelevantObjects(detections);
 }
 
+enum CameraViewMode { logbook, standalone }
+
 class CameraView extends StatefulWidget {
-  const CameraView({super.key});
+  const CameraView({super.key, this.mode = CameraViewMode.logbook});
+
+  final CameraViewMode mode;
 
   @override
   State<CameraView> createState() => _CameraViewState();
@@ -44,6 +51,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
   bool _isInitializing = true;
   bool _isCapturing = false;
   bool _isProcessing = false;
+  bool _isSwitchingCamera = false;
   String? _errorMessage;
   int? _previewImageWidth;
   int? _previewImageHeight;
@@ -129,6 +137,31 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _switchCamera() async {
+    if (_isPreviewingPhoto ||
+        _isCapturing ||
+        _isProcessing ||
+        _isSwitchingCamera ||
+        !_cameraService.canSwitchCamera) {
+      return;
+    }
+
+    setState(() {
+      _isSwitchingCamera = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _cameraService.switchCamera();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Gagal mengganti kamera: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isSwitchingCamera = false);
+    }
+  }
+
   void _retakePhoto() {
     setState(() {
       _capturedPhoto = null;
@@ -143,12 +176,37 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
     });
   }
 
-  void _usePhoto() {
+  Future<void> _continueToFilter() async {
     final photo = _capturedPhoto;
     if (photo == null) return;
 
+    final result = await Navigator.of(context).push<FilterPreviewResult>(
+      MaterialPageRoute(
+        builder: (_) => FilterPreviewView(
+          photo: photo,
+          detections: _detections,
+          vibe: _vibe,
+          primaryActionLabel: widget.mode == CameraViewMode.standalone
+              ? 'Selesai'
+              : 'Gunakan Foto',
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    if (widget.mode == CameraViewMode.standalone) {
+      Navigator.of(context).pop();
+      return;
+    }
+
     Navigator.of(context).pop(
-      CameraCaptureResult(photo: photo, detections: _detections, vibe: _vibe),
+      CameraCaptureResult(
+        photo: result.photo,
+        detections: _detections,
+        vibe: _vibe,
+        filterName: result.filterName,
+      ),
     );
   }
 
@@ -287,21 +345,41 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.black45,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  '${_detections.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+            GestureDetector(
+              onTap: _isPreviewingPhoto ? null : _switchCamera,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: _isPreviewingPhoto
+                      ? Text(
+                          '${_detections.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        )
+                      : _isSwitchingCamera
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Icon(
+                          Icons.flip_camera_ios_outlined,
+                          color: _cameraService.canSwitchCamera
+                              ? Colors.white
+                              : Colors.white38,
+                          size: 20,
+                        ),
                 ),
               ),
             ),
@@ -450,9 +528,9 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                     const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: _usePhoto,
-                        icon: const Icon(Icons.check_rounded, size: 18),
-                        label: const Text('Gunakan'),
+                        onPressed: _continueToFilter,
+                        icon: const Icon(Icons.auto_awesome, size: 18),
+                        label: const Text('Lanjut'),
                         style: FilledButton.styleFrom(
                           backgroundColor: _teal,
                           foregroundColor: Colors.white,
