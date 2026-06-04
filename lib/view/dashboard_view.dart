@@ -4,7 +4,7 @@ import '../data/models/study_session.dart';
 import '../data/remote/study_log_repository.dart';
 import 'detail_session_view.dart';
 import '../features/logbook/create_logbook_view.dart';
-import '../features/detection/detection_view.dart';
+import '../features/detection/camera_view.dart';
 
 class DashboardView extends StatefulWidget {
   const DashboardView({super.key, this.loadSessions});
@@ -683,9 +683,9 @@ class _BottomNavigation extends StatelessWidget {
           _NavItem(
             label: 'Kamera',
             icon: Icons.camera_alt_outlined,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DetectionView()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const CameraView())),
           ),
           const _NavItem(label: 'Statistik', icon: Icons.trending_up),
         ],

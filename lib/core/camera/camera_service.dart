@@ -17,12 +17,12 @@ class CameraService {
 
       _controller = CameraController(
         _cameras.first,
-        ResolutionPreset.low, // turunkan resolusi supaya lebih ringan
+        ResolutionPreset.veryHigh,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420, // paksa YUV
       );
 
       await _controller!.initialize();
+      await _configureCamera();
       _isInitialized = true;
     } catch (e) {
       debugPrint('CameraService init error: $e');
@@ -54,10 +54,24 @@ class CameraService {
     await _controller?.dispose();
     _controller = CameraController(
       newCamera,
-      ResolutionPreset.high,
+      ResolutionPreset.veryHigh,
       enableAudio: false,
     );
     await _controller!.initialize();
+    await _configureCamera();
+  }
+
+  Future<void> _configureCamera() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    try {
+      await controller.setFlashMode(FlashMode.off);
+      await controller.setFocusMode(FocusMode.auto);
+      await controller.setExposureMode(ExposureMode.auto);
+    } catch (e) {
+      debugPrint('CameraService config warning: $e');
+    }
   }
 
   Future<void> dispose() async {
@@ -66,8 +80,7 @@ class CameraService {
     _isInitialized = false;
   }
 
-  Future<void> startImageStream(Function(CameraImage image) onImage,) 
-  async {
+  Future<void> startImageStream(Function(CameraImage image) onImage) async {
     if (_controller == null) return;
 
     if (_controller!.value.isStreamingImages) return;
@@ -81,5 +94,5 @@ class CameraService {
     if (_controller!.value.isStreamingImages) {
       await _controller!.stopImageStream();
     }
-}
+  }
 }

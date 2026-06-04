@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
 import '../../data/models/study_session.dart';
 import '../../data/remote/cloudinary_service.dart';
-import '../detection/detection_view.dart';
+import '../../data/remote/study_log_repository.dart';
+import '../detection/camera_view.dart';
 
 class CreateLogbookView extends StatefulWidget {
   const CreateLogbookView({super.key});
@@ -163,6 +164,26 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
     setState(() => _localPhotos.removeAt(index));
   }
 
+  Future<void> _openCamera() async {
+    final result = await Navigator.of(context).push<CameraCaptureResult>(
+      MaterialPageRoute(builder: (_) => const CameraView()),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      if (_localPhotos.length < 5) {
+        _localPhotos.add(result.photo);
+      }
+
+      for (final object in result.relevantObjects) {
+        if (!_detectedObjects.contains(object)) {
+          _detectedObjects.add(object);
+        }
+      }
+    });
+  }
+
   // ── Detected objects chips ────────────────────────────────────
   void _addObject() {
     final text = _objectController.text.trim();
@@ -204,8 +225,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
         createdAt: DateTime.now(),
       );
 
-      // TODO: Panggil repository untuk simpan ke MongoDB
-      // await StudyLogRepository().save(session);
+      await const StudyLogRepository().save(session);
 
       if (mounted) {
         Navigator.of(context).pop(session);
@@ -573,7 +593,7 @@ class _CreateLogbookViewState extends State<CreateLogbookView>
                 // Add photo button
                 if (_localPhotos.length < 5)
                   GestureDetector(
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DetectionView())),
+                    onTap: _openCamera,
                     child: Container(
                       width: 90,
                       height: 90,

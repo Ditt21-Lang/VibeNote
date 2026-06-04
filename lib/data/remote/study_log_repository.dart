@@ -8,14 +8,18 @@ class StudyLogRepository {
 
   final String collectionName;
 
-  Future<List<StudySession>> fetchStudyLogs() async {
-    final uri = dotenv.env['MONGO_URI'];
-    if (uri == null || uri.trim().isEmpty) {
-      throw StateError('MONGO_URI belum tersedia di file .env');
-    }
+  Future<void> save(StudySession session) async {
+    final db = await _openDb();
 
-    final db = await Db.create(uri);
-    await db.open();
+    try {
+      await db.collection(collectionName).insertOne(session.toMongoDocument());
+    } finally {
+      await db.close();
+    }
+  }
+
+  Future<List<StudySession>> fetchStudyLogs() async {
+    final db = await _openDb();
 
     try {
       final documents = await db
@@ -27,5 +31,16 @@ class StudyLogRepository {
     } finally {
       await db.close();
     }
+  }
+
+  Future<Db> _openDb() async {
+    final uri = dotenv.env['MONGO_URI'];
+    if (uri == null || uri.trim().isEmpty) {
+      throw StateError('MONGO_URI belum tersedia di file .env');
+    }
+
+    final db = await Db.create(uri);
+    await db.open();
+    return db;
   }
 }

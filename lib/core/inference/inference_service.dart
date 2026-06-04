@@ -37,7 +37,7 @@ class InferenceService {
   static const String _modelPath = 'assets/detect.tflite';
   static const String _labelsPath = 'assets/labelmap.txt';
   static const int _inputSize = 300;
-  static const double _confidenceThreshold = 0.3;
+  static const double _confidenceThreshold = 0.5;
   static const int _maxResults = 10;
 
   Interpreter? _interpreter;
@@ -64,7 +64,9 @@ class InferenceService {
 
       _isInitialized = true;
       debugPrint('InferenceService: initialized, labels=${_labels.length}');
-      debugPrint('InferenceService: label[0]=${_labels.isNotEmpty ? _labels[0] : "empty"}');
+      debugPrint(
+        'InferenceService: label[0]=${_labels.isNotEmpty ? _labels[0] : "empty"}',
+      );
     } catch (e) {
       debugPrint('InferenceService init error: $e');
       _isInitialized = false;
@@ -101,20 +103,22 @@ class InferenceService {
     final input = [
       List.generate(
         _inputSize,
-        (y) => List.generate(
-          _inputSize,
-          (x) {
-            final pixel = resized.getPixel(x, y);
-            return [pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt()];
-          },
-        ),
+        (y) => List.generate(_inputSize, (x) {
+          final pixel = resized.getPixel(x, y);
+          return [pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt()];
+        }),
       ),
     ];
 
     // Output tensors MobileNet SSD
-    final outputLocations =
-        List.generate(1, (_) => List.generate(_maxResults, (_) => List.filled(4, 0.0)));
-    final outputClasses = List.generate(1, (_) => List.filled(_maxResults, 0.0));
+    final outputLocations = List.generate(
+      1,
+      (_) => List.generate(_maxResults, (_) => List.filled(4, 0.0)),
+    );
+    final outputClasses = List.generate(
+      1,
+      (_) => List.filled(_maxResults, 0.0),
+    );
     final outputScores = List.generate(1, (_) => List.filled(_maxResults, 0.0));
     final numDetections = List.filled(1, 0.0);
 
@@ -135,29 +139,36 @@ class InferenceService {
     for (int i = 0; i < count; i++) {
       final score = outputScores[0][i];
       final classIndex = outputClasses[0][i].toInt();
+      final labelIndex = classIndex + 1;
 
-      debugPrint('InferenceService: [$i] classIndex=$classIndex score=${score.toStringAsFixed(3)}');
+      debugPrint(
+        'InferenceService: [$i] classIndex=$classIndex labelIndex=$labelIndex score=${score.toStringAsFixed(3)}',
+      );
 
       if (score < _confidenceThreshold) continue;
-      if (classIndex < 0 || classIndex >= _labels.length) continue;
+      if (labelIndex < 0 || labelIndex >= _labels.length) continue;
 
-      final label = _labels[classIndex];
+      final label = _labels[labelIndex];
 
       // Skip label kosong atau '???'
       if (label.isEmpty || label == '???') continue;
 
-      results.add(DetectionResult(
-        label: label,
-        confidence: score,
-        rect: List<double>.from(outputLocations[0][i]),
-      ));
+      results.add(
+        DetectionResult(
+          label: label,
+          confidence: score,
+          rect: List<double>.from(outputLocations[0][i]),
+        ),
+      );
     }
 
     results.sort((a, b) => b.confidence.compareTo(a.confidence));
 
     debugPrint('InferenceService: filtered results=${results.length}');
     for (final r in results) {
-      debugPrint('  → ${r.label} (${(r.confidence * 100).toStringAsFixed(1)}%)');
+      debugPrint(
+        '  → ${r.label} (${(r.confidence * 100).toStringAsFixed(1)}%)',
+      );
     }
 
     return results;
@@ -187,7 +198,8 @@ class InferenceService {
     if (focusScore >= 5) {
       return const VibeResult(
         label: 'Deep Focus 🎯',
-        description: 'Meja belajarmu lengkap! Kondisi sangat mendukung untuk belajar intensif.',
+        description:
+            'Meja belajarmu lengkap! Kondisi sangat mendukung untuk belajar intensif.',
       );
     } else if (focusScore >= 3) {
       return const VibeResult(
@@ -217,19 +229,9 @@ class InferenceService {
     }
   }
 
-  // ── Filter objek relevan untuk logbook ───────────────────────────────────
+  // ── Objek terdeteksi untuk logbook ───────────────────────────────────────
   static List<String> filterRelevantObjects(List<DetectionResult> detections) {
-    const relevantLabels = {
-      'laptop', 'book', 'cup', 'cell phone', 'keyboard',
-      'mouse', 'bottle', 'chair', 'person', 'backpack',
-      'tv', 'remote', 'scissors', 'clock',
-    };
-
-    return detections
-        .where((d) => relevantLabels.contains(d.label.toLowerCase()))
-        .map((d) => d.label)
-        .toSet()
-        .toList();
+    return detections.map((d) => d.label).toSet().toList();
   }
 
   void dispose() {
