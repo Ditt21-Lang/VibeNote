@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models/study_session.dart';
 import '../data/remote/study_log_repository.dart';
 import 'detail_session_view.dart';
+import '../features/logbook/analytics_view.dart';
 import '../features/logbook/create_logbook_view.dart';
 import '../features/detection/camera_view.dart';
 
@@ -84,6 +85,17 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
+  Future<void> _openAnalytics() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AnalyticsView(loadSessions: _loadSessions),
+      ),
+    );
+
+    if (!mounted) return;
+    await _refreshSessions();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,6 +122,7 @@ class _DashboardViewState extends State<DashboardView> {
                               _Header(sessions: sessions),
                               _QuickActions(
                                 onCreateLogbook: _openCreateLogbook,
+                                onOpenAnalytics: _openAnalytics,
                               ),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(
@@ -139,7 +152,10 @@ class _DashboardViewState extends State<DashboardView> {
                         ),
                       ),
                     ),
-                    _BottomNavigation(onCreateLogbook: _openCreateLogbook),
+                    _BottomNavigation(
+                      onCreateLogbook: _openCreateLogbook,
+                      onOpenAnalytics: _openAnalytics,
+                    ),
                   ],
                 );
               },
@@ -303,9 +319,13 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.onCreateLogbook});
+  const _QuickActions({
+    required this.onCreateLogbook,
+    required this.onOpenAnalytics,
+  });
 
   final VoidCallback onCreateLogbook;
+  final VoidCallback onOpenAnalytics;
 
   @override
   Widget build(BuildContext context) {
@@ -340,11 +360,17 @@ class _QuickActions extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const _ActionButton(
+                  _ActionButton(
                     label: 'Kamera',
                     icon: Icons.camera_alt_outlined,
                     backgroundColor: Color(0xFFC9E3FF),
                     iconColor: Color(0xFF0B89FF),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const CameraView(mode: CameraViewMode.standalone),
+                      ),
+                    ),
                   ),
                   _ActionButton(
                     label: 'Logbook',
@@ -353,11 +379,12 @@ class _QuickActions extends StatelessWidget {
                     iconColor: Color(0xFF03BCA9),
                     onTap: onCreateLogbook,
                   ),
-                  const _ActionButton(
+                  _ActionButton(
                     label: 'Review',
                     icon: Icons.trending_up,
                     backgroundColor: Color(0xFFC5C5C5),
                     iconColor: Colors.black,
+                    onTap: onOpenAnalytics,
                   ),
                 ],
               ),
@@ -826,9 +853,13 @@ class _ObjectChip extends StatelessWidget {
 }
 
 class _BottomNavigation extends StatelessWidget {
-  const _BottomNavigation({required this.onCreateLogbook});
+  const _BottomNavigation({
+    required this.onCreateLogbook,
+    required this.onOpenAnalytics,
+  });
 
   final VoidCallback onCreateLogbook;
+  final VoidCallback onOpenAnalytics;
 
   @override
   Widget build(BuildContext context) {
@@ -868,7 +899,11 @@ class _BottomNavigation extends StatelessWidget {
               ),
             ),
           ),
-          const _NavItem(label: 'Statistik', icon: Icons.trending_up),
+          _NavItem(
+            label: 'Statistik',
+            icon: Icons.trending_up,
+            onTap: onOpenAnalytics,
+          ),
         ],
       ),
     );

@@ -48,6 +48,18 @@ void main() {
     expect(find.text('Kuliah'), findsOneWidget);
     expect(find.text('Fokus'), findsOneWidget);
 
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Analytics'), findsOneWidget);
+    expect(find.text('Overview'), findsOneWidget);
+    expect(find.text('Weekly Trend'), findsOneWidget);
+    expect(find.text('Top Detected Objects'), findsOneWidget);
+    expect(find.text('Vibe Breakdown'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Review Proyek PCD'));
     await tester.pumpAndSettle();
 

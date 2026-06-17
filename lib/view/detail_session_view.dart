@@ -428,7 +428,7 @@ class _PhotoRow extends StatelessWidget {
         itemCount: photos.length,
         separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
-          return _PhotoTile(path: photos[index]);
+          return _PhotoTile(path: photos[index], index: index);
         },
       ),
     );
@@ -436,31 +436,143 @@ class _PhotoRow extends StatelessWidget {
 }
 
 class _PhotoTile extends StatelessWidget {
-  const _PhotoTile({required this.path});
+  const _PhotoTile({required this.path, required this.index});
 
   final String path;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(
-        aspectRatio: 1.18,
-        child: Container(
-          color: const Color(0xFFEDEDED),
-          child: _isRemoteUrl(path)
-              ? Image.network(
-                  path,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const _PhotoError(),
-                )
-              : Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const _PhotoError(),
+      child: Material(
+        color: const Color(0xFFEDEDED),
+        child: InkWell(
+          onTap: () => _openPreview(context),
+          child: AspectRatio(
+            aspectRatio: 1.18,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Hero(
+                  tag: 'detail-photo-$index-$path',
+                  child: _LogbookImage(path: path, fit: BoxFit.cover),
                 ),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    margin: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.46),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.zoom_in,
+                      color: Colors.white,
+                      size: 17,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+
+  Future<void> _openPreview(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.9),
+      builder: (_) =>
+          _PhotoPreviewDialog(path: path, heroTag: 'detail-photo-$index-$path'),
+    );
+  }
+}
+
+class _PhotoPreviewDialog extends StatelessWidget {
+  const _PhotoPreviewDialog({required this.path, required this.heroTag});
+
+  final String path;
+  final String heroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.zero,
+      backgroundColor: Colors.transparent,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: const ColoredBox(color: Colors.transparent),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Hero(
+                tag: heroTag,
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: _LogbookImage(path: path, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 18,
+            right: 18,
+            child: SafeArea(
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.16),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Icon(Icons.close, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogbookImage extends StatelessWidget {
+  const _LogbookImage({required this.path, required this.fit});
+
+  final String path;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isRemoteUrl(path)) {
+      return Image.network(
+        path,
+        fit: fit,
+        errorBuilder: (_, _, _) => const _PhotoError(),
+      );
+    }
+
+    return Image.file(
+      File(path),
+      fit: fit,
+      errorBuilder: (_, _, _) => const _PhotoError(),
     );
   }
 
