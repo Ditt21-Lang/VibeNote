@@ -143,6 +143,7 @@ class _DashboardViewState extends State<DashboardView> {
                                       snapshot: snapshot,
                                       onRetry: _retry,
                                       onChanged: _refreshSessions,
+                                      maxItems: 3,
                                     ),
                                   ],
                                 ),
@@ -513,11 +514,13 @@ class _SessionList extends StatelessWidget {
     required this.snapshot,
     required this.onRetry,
     required this.onChanged,
+    this.maxItems,
   });
 
   final AsyncSnapshot<List<StudySession>> snapshot;
   final VoidCallback onRetry;
   final Future<void> Function() onChanged;
+  final int? maxItems;
 
   @override
   Widget build(BuildContext context) {
@@ -548,11 +551,13 @@ class _SessionList extends StatelessWidget {
       );
     }
 
-    final previewSessions = sessions.take(3);
+    final displayedSessions = maxItems == null
+        ? sessions
+        : sessions.take(maxItems!);
 
     return Column(
       children: [
-        for (final session in previewSessions) ...[
+        for (final session in displayedSessions) ...[
           _SessionCard(session: session, onChanged: onChanged),
           const SizedBox(height: 16),
         ],

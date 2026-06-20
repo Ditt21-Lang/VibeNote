@@ -68,4 +68,51 @@ void main() {
     expect(find.text('Insight sesi'), findsOneWidget);
     expect(find.textContaining('Vibe: Fokus'), findsOneWidget);
   });
+
+  testWidgets('dashboard limits sessions but view all shows every logbook', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const ui.Size(430, 932));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final sessions = List.generate(
+      4,
+      (index) => StudySession(
+        id: ObjectId(),
+        type: 'Kuliah',
+        title: 'Logbook ${index + 1}',
+        description: 'Deskripsi sesi ${index + 1}',
+        date: DateTime.now(),
+        startTime: '08:00',
+        endTime: '09:00',
+        durationMinutes: 60,
+        photos: const [],
+        detectedObjects: const [],
+        vibe: const VibeAnalysis(
+          label: 'Fokus',
+          description: 'Suasana kegiatan terlihat fokus.',
+        ),
+        createdAt: DateTime.now().subtract(Duration(days: index)),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: DashboardView(loadSessions: () async => sessions)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Logbook 1'), findsOneWidget);
+    expect(find.text('Logbook 2'), findsOneWidget);
+    expect(find.text('Logbook 3'), findsOneWidget);
+    expect(find.text('Logbook 4'), findsNothing);
+
+    await tester.tap(find.text('Lihat Semua'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Semua Logbook'), findsOneWidget);
+    expect(find.text('Logbook 1'), findsOneWidget);
+    expect(find.text('Logbook 2'), findsOneWidget);
+    expect(find.text('Logbook 3'), findsOneWidget);
+    expect(find.text('Logbook 4'), findsOneWidget);
+  });
 }
